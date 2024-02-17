@@ -1,0 +1,78 @@
+name: Build Electron App
+
+on:
+  workflow_call:
+    inputs:
+      branch:
+        required: true
+        type: string
+      operatingSystem:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+    secrets:
+      appleAPIKeyContent:
+        required: true
+      appleAPIKeyID:
+        required: true
+      appleAPIIssuerID:
+        required: true
+      appleCertData:
+        required: true
+      appleCertKeychainPassword:
+        required: true
+      appleCertPassword:
+        required: true
+      token:
+        required: true
+
+jobs:
+  build-electron-app:
+    runs-on: ${{ inputs.operatingSystem }}
+
+    steps:
+      - name: Write the Apple App Connect API Key to Disk
+        uses: timheuer/base64-to-file@v1.2
+        id: writeAPIKey
+        if: ${{ startsWith(inputs.operatingSystem, 'macos') }}
+        with:
+          encodedString: ${{ secrets.appleAPIKeyContent }}
+          fileName: apikey.p8
+
+      - name: Add Signing Certificate to Keychain
+        uses: BoundfoxStudios/action-import-signing-certificate@v1
+        if: ${{ startsWith(inputs.operatingSystem, 'macos') }}
+        with:
+          certificate-data: ${{ secrets.appleCertData }}
+          certificate-passphrase: ${{ secrets.appleCertPassword }}
+          keychain-name: login
+          keychain-password: ${{ secrets.appleCertKeychainPassword }}
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'yarn'
+
+      - name: Install Packages
+        run: yarn install --network-timeout 600000
+
+      - name: Update Version
+        run: yarn version ${{ inputs.version }}
+
+      - name: Build and Publish to Github
+        run: yarn run publish ${{ startsWith(inputs.operatingSystem, 'macos') && '--arch=universal' }}
+        env:
+          APPLE_API_ISSUER_ID: ${{ secrets.appleAPIIssuerID }}
+          APPLE_API_KEY: ${{ steps.writeAPIKey.outputs.filePath }}
+          APPLE_API_KEY_ID: ${{ secrets.appleAPIKeyID }}
+          GITHUB_TOKEN: ${{ secrets.token }}
+          NODE_ENV: ${{ inputs.branch }}

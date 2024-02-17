@@ -1,0 +1,51 @@
+name: Create Draft Release
+
+on:
+  workflow_call:
+    inputs:
+      notes:
+        required: true
+        type: string
+      target:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+    secrets:
+      token:
+        required: true
+
+jobs:
+  create-draft-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'yarn'
+
+      - name: Delete Outdated Drafts
+        uses: hugo19941994/delete-draft-releases@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.token }}
+
+      - name: Create Release Draft
+        uses: softprops/action-gh-release@v0.1.15
+        env:
+          GITHUB_TOKEN: ${{ secrets.token }}
+        with:
+          body: ${{ inputs.notes }}
+          draft: true
+          prerelease: ${{ inputs.target != 'main' }}
+          name: v${{ inputs.version }}
+          tag_name: v${{ inputs.version }}
+          target_commitish: ${{ inputs.target }}

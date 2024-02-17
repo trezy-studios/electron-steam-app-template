@@ -1,0 +1,58 @@
+name: Get Next Version
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+    secrets:
+      token:
+        required: true
+    outputs:
+      published:
+        description: Whether a new version should be published.
+        value: ${{ jobs.get-next-version.outputs.published }}
+      version:
+        description: The new version.
+        value: ${{ jobs.get-next-version.outputs.version }}
+      notes:
+        description: Release notes for the new version.
+        value: ${{ jobs.get-next-version.outputs.notes }}
+
+jobs:
+  get-next-version:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: List Git Tags
+        run: git tag
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'yarn'
+
+      - name: Install Packages
+        run: yarn install
+
+      - name: Get Next Version
+        run: npx semantic-release --dry-run
+        id: get-next-version
+        env:
+          GITHUB_TOKEN: ${{ secrets.token }}
+
+      - name: Show Version
+        run: echo "Next version is ${{ steps.get-next-version.outputs.new-release-version }} (${{ inputs.ref }})"
+
+    outputs:
+      published: ${{ steps.get-next-version.outputs.new-release-published }}
+      version: ${{ steps.get-next-version.outputs.new-release-version }}
+      notes: ${{ steps.get-next-version.outputs.new-release-notes }}

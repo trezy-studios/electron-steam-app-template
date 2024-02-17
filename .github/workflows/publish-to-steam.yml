@@ -1,0 +1,80 @@
+name: Publish to Steam
+
+on:
+  workflow_call:
+    inputs:
+      branch:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+      zipPrefix:
+        required: true
+        type: string
+    secrets:
+      steamBuildUsername:
+        required: true
+      steamBuildConfigVDF:
+        required: true
+      steamDemoAppID:
+        required: true
+      steamAppID:
+        required: true
+      token:
+        required: true
+
+jobs:
+  publish-to-steam:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - name: Download Builds
+        uses: robinraju/release-downloader@v1.8
+        with:
+          fileName: '*.zip'
+          out-file-path: artifacts
+          repository: ${{ github.repository }}
+          tag: v${{ inputs.version }}
+          token: ${{ secrets.token }}
+
+      # Ensure the directories exist before extracting builds.
+      - run: mkdir -p builds/darwin
+      - run: mkdir -p builds/linux
+      - run: mkdir -p builds/win32
+
+      # Rewrite the Windows zip to use forward slashes instead of backslashes.
+      - name: Convert Windows Archive to Forward Slashes
+        run: 7z rn artifacts/${{ inputs.zipPrefix }}-win32-x64-${{ inputs.version }}.zip $(7z l artifacts/${{ inputs.zipPrefix }}-win32-x64-${{ inputs.version }}.zip | grep '\\' | awk '{ print $6, gensub(/\\/, "/", "g", $6); }' | paste -s)
+
+      - name: Decompress Windows Archive
+        run: 7z x artifacts/${{ inputs.zipPrefix }}-win32-x64-${{ inputs.version }}.zip -obuilds/win32
+
+      - name: Decompress macOS Archive
+        run: 7z x artifacts/${{ inputs.zipPrefix }}-darwin-universal-${{ inputs.version }}.zip -obuilds/darwin
+
+      - name: Decompress Linux Archive
+        run: 7z x artifacts/${{ inputs.zipPrefix }}-linux-x64-${{ inputs.version }}.zip -obuilds/linux
+
+      - name: Publish Builds to Steam
+        uses: game-ci/steam-deploy@v3
+        with:
+          username: ${{ secrets.steamBuildUsername }}
+          configVdf: ${{ secrets.steamBuildConfigVDF }}
+          appId: ${{ inputs.branch == 'demo' && secrets.steamDemoAppID || secrets.steamAppID }}
+          buildDescription: ${{ inputs.version }}
+          rootPath: builds
+          depot1Path: win32
+          depot2Path: darwin
+          depot3Path: linux
+          releaseBranch: ${{ inputs.branch }}
+
+      - name: Save Steam Logs on Error
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          compression-level: 0
+          name: logs
+          path: BuildOutput
+          retention-days: 30

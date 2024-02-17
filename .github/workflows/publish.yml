@@ -1,0 +1,104 @@
+name: Publish
+
+on:
+  push:
+    branches:
+      - main
+      - beta
+      - demo
+    paths-ignore:
+      - '**.md'
+      - .editorconfig
+      - .gitignore
+      - .yarnrc
+      - LICENSE
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - .editorconfig
+      - .gitignore
+      - .yarnrc
+      - LICENSE
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  get-next-version:
+    name: Get Next Version
+    uses: ./.github/workflows/get-next-version.yml
+    with:
+      ref: ${{ github.ref_name }}
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+
+  create-draft-release:
+    name: Create Draft Release
+    uses: ./.github/workflows/create-draft-release.yml
+    needs:
+      - get-next-version
+    if: needs.get-next-version.outputs.published == 'true'
+    with:
+      notes: ${{ needs.get-next-version.outputs.notes }}
+      target: ${{ github.ref_name }}
+      version: ${{ needs.get-next-version.outputs.version }}
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+
+  build-electron-app:
+    name: Build Electron App
+    uses: ./.github/workflows/build-electron-app.yml
+    needs:
+      - create-draft-release
+      - get-next-version
+    strategy:
+      matrix:
+        os:
+          - macos-14
+          - ubuntu-latest
+          - windows-latest
+    with:
+      branch: ${{ github.ref_name }}
+      operatingSystem: ${{ matrix.os }}
+      version: ${{ needs.get-next-version.outputs.version }}
+    secrets:
+      appleAPIIssuerID: ${{ secrets.APPLE_API_ISSUER_ID }}
+      appleAPIKeyContent: ${{ secrets.APPLE_API_KEY_CONTENT }}
+      appleAPIKeyID: ${{ secrets.APPLE_API_KEY_ID }}
+      appleCertData: ${{ secrets.APPLE_CERT_DATA }}
+      appleCertKeychainPassword: ${{ secrets.APPLE_CERT_KEYCHAIN_PASSWORD }}
+      appleCertPassword: ${{ secrets.APPLE_CERT_PASSWORD }}
+      token: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-github-release:
+    name: Publish Github Release
+    uses: ./.github/workflows/publish-github-release.yml
+    needs:
+      - build-electron-app
+      - get-next-version
+    with:
+      branch: ${{ github.ref_name }}
+      gitEmail: ${{ github.actor }}+${{ github.actor_id }}@trezy.com
+      gitUsername: ${{ github.actor }}
+      repo: ${{ github.repository }}
+      version: ${{ needs.get-next-version.outputs.version }}
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-to-steam:
+    name: Publish to Steam
+    uses: ./.github/workflows/publish-to-steam.yml
+    needs:
+      - get-next-version
+      - publish-github-release
+    with:
+      branch: ${{ github.ref_name }}
+      version: ${{ needs.get-next-version.outputs.version }}
+      zipPrefix: The-Inn-at-Nightfall
+    secrets:
+      steamAppID: ${{ secrets.STEAM_APP_ID }}
+      steamBuildUsername: ${{ secrets.STEAM_BUILD_USERNAME }}
+      steamBuildConfigVDF: ${{ secrets.STEAM_BUILD_CONFIG_VDF }}
+      steamDemoAppID: ${{ secrets.STEAM_DEMO_APP_ID }}
+      token: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,50 @@
+name: Publish Github Release
+
+on:
+  workflow_call:
+    inputs:
+      branch:
+        required: true
+        type: string
+      gitEmail:
+        required: true
+        type: string
+      gitUsername:
+        required: true
+        type: string
+      repo:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+    secrets:
+      token:
+        required: true
+
+jobs:
+  publish-github-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Undraft the release
+        uses: LogicOverSnacks/actions-publish@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.token }}
+        with:
+          repo: ${{ inputs.repo }}
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup Git identity
+        run: git config --global user.email "${{ inputs.gitEmail }}" && git config --global user.name "${{ inputs.gitUsername }}"
+
+      - name: Create the semantic-release note
+        run: git notes --ref semantic-release add -f -m '{"channels":["${{ inputs.branch }}"]}' v${{ inputs.version }}
+
+      - name: Push semantic-release note
+        run: git push --force origin refs/notes/semantic-release
